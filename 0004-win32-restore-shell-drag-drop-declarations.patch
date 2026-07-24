@@ -1,0 +1,50 @@
+win32: restore Shell drag-and-drop declarations
+
+The minimal shellapi.h shipped by TinyCC omitted the HDROP handle and the
+classic WM_DROPFILES helper declarations. Restore the declarations and the
+UNICODE/ANSI DragQueryFile alias so callers retain the correct calling
+convention. Also provide an import definition file covering every function
+declared by this minimal header, so adding drag-and-drop support does not hide
+the existing ShellExecute, FindExecutable, or CommandLineToArgvW imports.
+
+diff --git a/win32/include/winapi/shellapi.h b/win32/include/winapi/shellapi.h
+--- a/win32/include/winapi/shellapi.h
++++ b/win32/include/winapi/shellapi.h
+@@ -37,7 +37,11 @@
++  DECLARE_HANDLE(HDROP);
++
+ #ifdef UNICODE
++#define DragQueryFile DragQueryFileW
+ #define ShellExecute ShellExecuteW
+ #define FindExecutable FindExecutableW
+ #else
++#define DragQueryFile DragQueryFileA
+ #define ShellExecute ShellExecuteA
+ #define FindExecutable FindExecutableA
+ #endif
+@@ -45,2 +49,7 @@
+   /* minimal subset distributed with TinyCC. nShowCmd is at winuser.h */
++  SHSTDAPI_(UINT) DragQueryFileA(HDROP hDrop,UINT iFile,LPSTR lpszFile,UINT cch);
++  SHSTDAPI_(UINT) DragQueryFileW(HDROP hDrop,UINT iFile,LPWSTR lpszFile,UINT cch);
++  SHSTDAPI_(WINBOOL) DragQueryPoint(HDROP hDrop,POINT *ppt);
++  SHSTDAPI_(void) DragFinish(HDROP hDrop);
++  SHSTDAPI_(void) DragAcceptFiles(HWND hWnd,WINBOOL fAccept);
+   SHSTDAPI_(HINSTANCE) ShellExecuteA(HWND hwnd,LPCSTR lpOperation,LPCSTR lpFile,LPCSTR lpParameters,LPCSTR lpDirectory,INT nShowCmd);
+diff --git a/win32/lib/shell32.def b/win32/lib/shell32.def
+new file mode 100644
+--- /dev/null
++++ b/win32/lib/shell32.def
+@@ -0,0 +1,13 @@
++LIBRARY shell32.dll
++
++EXPORTS
++CommandLineToArgvW
++DragAcceptFiles
++DragFinish
++DragQueryFileA
++DragQueryFileW
++DragQueryPoint
++FindExecutableA
++FindExecutableW
++ShellExecuteA
++ShellExecuteW

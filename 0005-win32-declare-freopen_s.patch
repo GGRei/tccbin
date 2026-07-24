@@ -1,0 +1,18 @@
+win32: declare freopen_s in the secure stdio header
+
+The MSVCRT import definition already exports freopen_s, but TinyCC's secure
+stdio header only declares the wide-character variant. Add the missing narrow
+prototype so strict implicit-function diagnostics preserve the correct ABI.
+
+diff --git a/win32/include/sec_api/stdio_s.h b/win32/include/sec_api/stdio_s.h
+--- a/win32/include/sec_api/stdio_s.h
++++ b/win32/include/sec_api/stdio_s.h
+@@ -75,6 +75,8 @@ extern "C" {
+   _CRTIMP int __cdecl _vsnprintf_l(char *_DstBuf,size_t _MaxCount,const char *_Format,_locale_t _Locale,va_list _ArgList);
+   _CRTIMP int __cdecl _vsnprintf_c_l(char *_DstBuf,size_t _MaxCount,const char *,_locale_t _Locale,va_list _ArgList);
+ 
++  _CRTIMP errno_t __cdecl freopen_s(FILE **_File,const char *_Filename,const char *_Mode,FILE *_OldFile);
++
+ #ifndef _WSTDIO_S_DEFINED
+ #define _WSTDIO_S_DEFINED
+   _CRTIMP wchar_t *__cdecl _getws_s(wchar_t *_Str,size_t _SizeInWords);

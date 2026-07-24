@@ -57,14 +57,70 @@ jobs:
         shell: pwsh
         run: work/thirdparty/tcc/build.ps1
 
+      - name: validate secure freopen declarations with x64 and i386 TCC
+        shell: pwsh
+        run: |
+          $probe = "work/thirdparty/tcc/tests/crt_secure_freopen.c"
+          $x64Ansi = "$env:RUNNER_TEMP/crt_secure_freopen_x64_ansi.exe"
+          $x64Unicode = "$env:RUNNER_TEMP/crt_secure_freopen_x64_unicode.exe"
+          $i386Ansi = "$env:RUNNER_TEMP/crt_secure_freopen_i386_ansi.exe"
+          $i386Unicode = "$env:RUNNER_TEMP/crt_secure_freopen_i386_unicode.exe"
+
+          & work/thirdparty/tcc/tcc.exe `
+              -Werror `
+              -o $x64Ansi $probe
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 ANSI secure freopen conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/tcc.exe `
+              -Werror `
+              -DUNICODE -D_UNICODE `
+              -o $x64Unicode $probe
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 Unicode secure freopen conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/i386-win32-tcc.exe `
+              -Werror `
+              -o $i386Ansi $probe
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 ANSI secure freopen conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/i386-win32-tcc.exe `
+              -Werror `
+              -DUNICODE -D_UNICODE `
+              -o $i386Unicode $probe
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 Unicode secure freopen conformance probe failed"
+          }
+
+          foreach ($executable in @(
+              $x64Ansi,
+              $x64Unicode,
+              $i386Ansi,
+              $i386Unicode
+          )) {
+              & $executable
+              if ($LASTEXITCODE -ne 0) {
+                  throw "secure freopen conformance probe '$executable' failed at runtime"
+              }
+          }
+
       - name: validate WinAPI declarations with x64 and i386 TCC
         shell: pwsh
         run: |
           $probe = "work/thirdparty/tcc/tests/winapi_create_symbolic_link.c"
+          $dragDropProbe = "work/thirdparty/tcc/tests/winapi_shell_drag_drop.c"
           $x64Ansi = "$env:RUNNER_TEMP/winapi_create_symbolic_link_x64_ansi.exe"
           $x64Unicode = "$env:RUNNER_TEMP/winapi_create_symbolic_link_x64_unicode.exe"
           $i386Ansi = "$env:RUNNER_TEMP/winapi_create_symbolic_link_i386_ansi.exe"
           $i386Unicode = "$env:RUNNER_TEMP/winapi_create_symbolic_link_i386_unicode.exe"
+          $dragDropX64Ansi = "$env:RUNNER_TEMP/winapi_shell_drag_drop_x64_ansi.exe"
+          $dragDropX64Unicode = "$env:RUNNER_TEMP/winapi_shell_drag_drop_x64_unicode.exe"
+          $dragDropI386Ansi = "$env:RUNNER_TEMP/winapi_shell_drag_drop_i386_ansi.exe"
+          $dragDropI386Unicode = "$env:RUNNER_TEMP/winapi_shell_drag_drop_i386_unicode.exe"
 
           & work/thirdparty/tcc/tcc.exe `
               -Werror=implicit-function-declaration `
@@ -94,6 +150,48 @@ jobs:
               -o $i386Unicode $probe
           if ($LASTEXITCODE -ne 0) {
               throw "i386 Unicode WinAPI conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/tcc.exe `
+              -Werror=implicit-function-declaration `
+              -o $dragDropX64Ansi $dragDropProbe -lshell32
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 ANSI Shell drag-and-drop conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/tcc.exe `
+              -Werror=implicit-function-declaration `
+              -DUNICODE -D_UNICODE `
+              -o $dragDropX64Unicode $dragDropProbe -lshell32
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 Unicode Shell drag-and-drop conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/i386-win32-tcc.exe `
+              -Werror=implicit-function-declaration `
+              -o $dragDropI386Ansi $dragDropProbe -lshell32
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 ANSI Shell drag-and-drop conformance probe failed"
+          }
+
+          & work/thirdparty/tcc/i386-win32-tcc.exe `
+              -Werror=implicit-function-declaration `
+              -DUNICODE -D_UNICODE `
+              -o $dragDropI386Unicode $dragDropProbe -lshell32
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 Unicode Shell drag-and-drop conformance probe failed"
+          }
+
+          foreach ($executable in @(
+              $dragDropX64Ansi,
+              $dragDropX64Unicode,
+              $dragDropI386Ansi,
+              $dragDropI386Unicode
+          )) {
+              & $executable
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Shell drag-and-drop conformance probe '$executable' failed at runtime"
+              }
           }
 
       - name: run shared conformance tests
