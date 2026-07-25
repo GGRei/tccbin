@@ -26,6 +26,7 @@ $TccPatch1 = Join-Path $PSScriptRoot "0001-tccpe-strip-quotes-and-default-.dll-e
 $TccPatch2 = Join-Path $PSScriptRoot "0002-win32-don-t-treat-DBG_PRINTEXCEPTION_C-as-a-fatal-cr.patch"
 $TccPatch3 = Join-Path $PSScriptRoot "0003-win32-declare-CreateSymbolicLink.patch"
 $TccPatch4 = Join-Path $PSScriptRoot "0004-win32-declare-WSAConnectBy-family.patch"
+$TccPatch5 = Join-Path $PSScriptRoot "0005-win32-declare-InetNtop-InetPton-family.patch"
 $GcPatch = Join-Path $PSScriptRoot "v-ae88ee5-tinycc-bdwgc.patch"
 $OutDir = $PSScriptRoot
 
@@ -47,6 +48,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch3 failed to apply" }
     git apply $TccPatch4
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch4 failed to apply" }
+    git apply $TccPatch5
+    if ($LASTEXITCODE -ne 0) { throw "$TccPatch5 failed to apply" }
 
     Set-Location win32
     & .\build-tcc.bat -clean
