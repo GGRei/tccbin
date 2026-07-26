@@ -210,6 +210,45 @@ jobs:
               throw "i386 Unicode InetNtop/InetPton WinAPI conformance probe execution failed"
           }
 
+      - name: validate shell drag/drop WinAPI declarations and imports with x64 and i386 TCC
+        shell: pwsh
+        run: |
+          $probe = "work/thirdparty/tcc/tests/winapi_shell_drag_drop.c"
+          if (-not (Test-Path "work/thirdparty/tcc/lib/shell32.def")) {
+              throw "bundled shell32.def is missing"
+          }
+
+          $cases = @(
+              @{ Id = "x64_ansi"; Name = "x64 ANSI"; Compiler = "work/thirdparty/tcc/tcc.exe"; Defines = @() },
+              @{ Id = "x64_unicode"; Name = "x64 Unicode"; Compiler = "work/thirdparty/tcc/tcc.exe"; Defines = @("-DUNICODE", "-D_UNICODE") },
+              @{ Id = "i386_ansi"; Name = "i386 ANSI"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe"; Defines = @() },
+              @{ Id = "i386_unicode"; Name = "i386 Unicode"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe"; Defines = @("-DUNICODE", "-D_UNICODE") }
+          )
+          $linkModes = @(
+              @{ Id = "pragma"; Name = "pragma"; Defines = @(); Libraries = @() },
+              @{ Id = "explicit"; Name = "explicit -lshell32"; Defines = @("-DTCCBIN_NO_SHELL32_PRAGMA"); Libraries = @("-lshell32") }
+          )
+
+          foreach ($case in $cases) {
+              foreach ($linkMode in $linkModes) {
+                  $output = "$env:RUNNER_TEMP/winapi_shell_drag_drop_$($case.Id)_$($linkMode.Id).exe"
+                  $compilerArgs = @("-Wall", "-Werror", "-Werror=implicit-function-declaration")
+                  $compilerArgs += $case.Defines
+                  $compilerArgs += $linkMode.Defines
+                  $compilerArgs += @("-o", $output, $probe)
+                  $compilerArgs += $linkMode.Libraries
+
+                  & $case.Compiler @compilerArgs
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) shell drag/drop probe with $($linkMode.Name) failed"
+                  }
+                  & $output
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) shell drag/drop probe with $($linkMode.Name) execution failed"
+                  }
+              }
+          }
+
       - name: run shared conformance tests
         shell: pwsh
         run: |

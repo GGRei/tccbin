@@ -27,6 +27,7 @@ $TccPatch2 = Join-Path $PSScriptRoot "0002-win32-don-t-treat-DBG_PRINTEXCEPTION_
 $TccPatch3 = Join-Path $PSScriptRoot "0003-win32-declare-CreateSymbolicLink.patch"
 $TccPatch4 = Join-Path $PSScriptRoot "0004-win32-declare-WSAConnectBy-family.patch"
 $TccPatch5 = Join-Path $PSScriptRoot "0005-win32-declare-InetNtop-InetPton-family.patch"
+$TccPatch6 = Join-Path $PSScriptRoot "0006-win32-declare-shell-drag-drop-family.patch"
 $GcPatch = Join-Path $PSScriptRoot "v-ae88ee5-tinycc-bdwgc.patch"
 $OutDir = $PSScriptRoot
 
@@ -50,6 +51,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch4 failed to apply" }
     git apply $TccPatch5
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch5 failed to apply" }
+    git apply $TccPatch6
+    if ($LASTEXITCODE -ne 0) { throw "$TccPatch6 failed to apply" }
 
     Set-Location win32
     & .\build-tcc.bat -clean
@@ -63,6 +66,7 @@ try {
     Copy-Item i386-win32-tcc.exe     (Join-Path $OutDir "i386-win32-tcc.exe") -Force
     Copy-Item lib\libtcc1.a           (Join-Path $OutDir "lib\libtcc1.a") -Force
     Copy-Item lib\i386-win32-libtcc1.a (Join-Path $OutDir "lib\i386-win32-libtcc1.a") -Force
+    Copy-Item lib\shell32.def          (Join-Path $OutDir "lib\shell32.def") -Force
     foreach ($f in @("bcheck.o","bt-exe.o","bt-log.o","bt-dll.o","runmain.o",
                       "i386-win32-bcheck.o","i386-win32-bt-exe.o","i386-win32-bt-log.o",
                       "i386-win32-bt-dll.o","i386-win32-runmain.o",
