@@ -61,23 +61,64 @@ jobs:
               @{ Name = "x64"; Compiler = "work/thirdparty/tcc/tcc.exe" },
               @{ Name = "i386"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe" }
           )
+          $failures = @()
 
           foreach ($case in $cases) {
               $token = [guid]::NewGuid().ToString("N")
               $executable = Join-Path $env:RUNNER_TEMP "math_exp2_range_$token.exe"
               try {
-                  & $case.Compiler -Wall -Werror -o $executable $test
-                  if ($LASTEXITCODE -ne 0) {
-                      throw "$($case.Name) exp2 range test failed to compile or link"
+                  Write-Host "=== exp2 $($case.Name) compile: $($case.Compiler) ==="
+                  $compileExit = 1
+                  $compileException = $null
+                  try {
+                      & $case.Compiler -Wall -Werror -o $executable $test
+                      $compileExit = $LASTEXITCODE
+                  } catch {
+                      $compileException = $_.Exception.Message
                   }
-                  & $executable
-                  if ($LASTEXITCODE -ne 0) {
-                      throw "$($case.Name) exp2 range test failed at runtime"
+
+                  if ($compileExit -ne 0) {
+                      $failure = "$($case.Name) compile/link exit=$compileExit"
+                      if ($compileException) {
+                          $failure += " exception=$compileException"
+                      }
+                      $failures += $failure
+                      Write-Host "::error title=exp2 $($case.Name) compile::$failure"
+                  } else {
+                      Write-Host "=== exp2 $($case.Name) runtime ==="
+                      $runtimeExit = 1
+                      $runtimeException = $null
+                      try {
+                          & $executable
+                          $runtimeExit = $LASTEXITCODE
+                      } catch {
+                          $runtimeException = $_.Exception.Message
+                      }
+
+                      if ($runtimeExit -ne 0) {
+                          $failure = "$($case.Name) runtime exit=$runtimeExit"
+                          if ($runtimeException) {
+                              $failure += " exception=$runtimeException"
+                          }
+                          $failures += $failure
+                          Write-Host "::error title=exp2 $($case.Name) runtime::$failure"
+                      } else {
+                          Write-Host "=== exp2 $($case.Name) PASS ==="
+                      }
                   }
               } finally {
                   Remove-Item -LiteralPath $executable -Force -ErrorAction SilentlyContinue
               }
           }
+
+          if ($failures.Count -ne 0) {
+              Write-Host "=== exp2 range summary: FAIL ==="
+              foreach ($failure in $failures) {
+                  Write-Host "  $failure"
+              }
+              throw "exp2 range validation failed in $($failures.Count) architecture phase(s)"
+          }
+          Write-Host "=== exp2 range summary: PASS ==="
 
       - name: validate secure CRT fopen_s/freopen_s with x64 and i386 TCC
         shell: pwsh
