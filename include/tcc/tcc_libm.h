@@ -533,13 +533,13 @@ __CRT_INLINE double __cdecl exp2(double x) {
   double fraction;
 
   if (magnitude > 0x7ff0000000000000ull)
-    return x;
+    return x + x;
   if (magnitude == 0x7ff0000000000000ull)
     return u.i >> 63 ? 0.0 : x;
   if (x >= 1024.0)
     return scalbn(1.0, 1024);
   if (x < -1075.0)
-    return 0.0;
+    return scalbn(1.0, -1075);
 
   exponent = (int)x;
   if ((double)exponent > x)
@@ -551,7 +551,7 @@ __CRT_INLINE float __cdecl exp2f(float x) {
   return exp(x * 0.693147180559945309);
 }
 __CRT_INLINE long double __cdecl exp2l(long double x) {
-  return exp(x * 0.693147180559945309);
+  return exp2(x);
 }
 
 
