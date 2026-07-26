@@ -53,6 +53,34 @@ jobs:
         shell: pwsh
         run: work/thirdparty/tcc/build.ps1
 
+      - name: diagnose exp2 boundaries with x64 and i386 TCC
+        shell: pwsh
+        run: |
+          $probe = "work/thirdparty/tcc/tests/math_exp2_boundary_probe.c"
+          $cases = @(
+              @{ Name = "current x64"; Compiler = "work/thirdparty/tcc/tcc.exe" },
+              @{ Name = "current i386"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe" }
+          )
+
+          foreach ($case in $cases) {
+              $token = [guid]::NewGuid().ToString("N")
+              $executable = Join-Path $env:RUNNER_TEMP "math_exp2_boundary_$token.exe"
+              try {
+                  $compilerHash = (Get-FileHash -Algorithm SHA256 $case.Compiler).Hash
+                  Write-Host "=== $($case.Name): $($case.Compiler), sha256=$compilerHash ==="
+                  & $case.Compiler -Wall -o $executable $probe
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) exp2 boundary probe failed to compile or link"
+                  }
+                  & $executable
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) exp2 boundary probe failed at runtime"
+                  }
+              } finally {
+                  Remove-Item -LiteralPath $executable -Force -ErrorAction SilentlyContinue
+              }
+          }
+
       - name: validate secure CRT fopen_s/freopen_s with x64 and i386 TCC
         shell: pwsh
         run: |
