@@ -53,28 +53,26 @@ jobs:
         shell: pwsh
         run: work/thirdparty/tcc/build.ps1
 
-      - name: diagnose exp2 boundaries with x64 and i386 TCC
+      - name: validate exp2 range with x64 and i386 TCC
         shell: pwsh
         run: |
-          $probe = "work/thirdparty/tcc/tests/math_exp2_boundary_probe.c"
+          $test = "work/thirdparty/tcc/tests/math_exp2_range.c"
           $cases = @(
-              @{ Name = "current x64"; Compiler = "work/thirdparty/tcc/tcc.exe" },
-              @{ Name = "current i386"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe" }
+              @{ Name = "x64"; Compiler = "work/thirdparty/tcc/tcc.exe" },
+              @{ Name = "i386"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe" }
           )
 
           foreach ($case in $cases) {
               $token = [guid]::NewGuid().ToString("N")
-              $executable = Join-Path $env:RUNNER_TEMP "math_exp2_boundary_$token.exe"
+              $executable = Join-Path $env:RUNNER_TEMP "math_exp2_range_$token.exe"
               try {
-                  $compilerHash = (Get-FileHash -Algorithm SHA256 $case.Compiler).Hash
-                  Write-Host "=== $($case.Name): $($case.Compiler), sha256=$compilerHash ==="
-                  & $case.Compiler -Wall -o $executable $probe
+                  & $case.Compiler -Wall -Werror -o $executable $test
                   if ($LASTEXITCODE -ne 0) {
-                      throw "$($case.Name) exp2 boundary probe failed to compile or link"
+                      throw "$($case.Name) exp2 range test failed to compile or link"
                   }
                   & $executable
                   if ($LASTEXITCODE -ne 0) {
-                      throw "$($case.Name) exp2 boundary probe failed at runtime"
+                      throw "$($case.Name) exp2 range test failed at runtime"
                   }
               } finally {
                   Remove-Item -LiteralPath $executable -Force -ErrorAction SilentlyContinue
