@@ -1,0 +1,91 @@
+name: exp2 probe (windows x64+i386)
+
+on:
+  push:
+    branches: [codex/exp2-probe-windows]
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - name: checkout d9d02c5 tccbin snapshot plus probe
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: checkout snapshot before 45f31de
+        uses: actions/checkout@v4
+        with:
+          repository: vlang/tccbin
+          ref: b9cfff43ed46db626004853f6e5198b6cdd27072
+          path: before-45f31de
+
+      - name: record exact inputs
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          git diff --exit-code 45f31de7d532e221c26e4ed5fa807441e678fabf -- `
+              tcc.exe i386-win32-tcc.exe include/tcc/tcc_libm.h
+          git -C before-45f31de rev-parse HEAD
+          Get-FileHash tcc.exe -Algorithm SHA256
+          Get-FileHash i386-win32-tcc.exe -Algorithm SHA256
+
+      - name: d9d02c5 snapshot x64
+        id: current_x64
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & .\tcc.exe .\ci\exp2_probe.c -o .\exp2_probe_x64.exe
+          if ($LASTEXITCODE -ne 0) { throw "x64 probe compilation failed" }
+          & .\exp2_probe_x64.exe
+          if ($LASTEXITCODE -ne 0) { throw "x64 probe failed" }
+
+      - name: d9d02c5 snapshot i386
+        id: current_i386
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & .\i386-win32-tcc.exe .\ci\exp2_probe.c -o .\exp2_probe_i386.exe
+          if ($LASTEXITCODE -ne 0) { throw "i386 probe compilation failed" }
+          & .\exp2_probe_i386.exe
+          if ($LASTEXITCODE -ne 0) { throw "i386 probe failed" }
+
+      - name: pre-45f31de snapshot x64 diagnostic
+        shell: pwsh
+        run: |
+          $output = & .\before-45f31de\tcc.exe .\ci\exp2_probe.c `
+              -o .\exp2_probe_before_x64.exe 2>&1
+          $compileCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          Write-Host "pre-45f31de x64 compile exit: $compileCode"
+          if ($compileCode -eq 0) {
+              & .\exp2_probe_before_x64.exe
+              Write-Host "pre-45f31de x64 run exit: $LASTEXITCODE"
+          }
+          exit 0
+
+      - name: pre-45f31de snapshot i386 diagnostic
+        shell: pwsh
+        run: |
+          $output = & .\before-45f31de\i386-win32-tcc.exe .\ci\exp2_probe.c `
+              -o .\exp2_probe_before_i386.exe 2>&1
+          $compileCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          Write-Host "pre-45f31de i386 compile exit: $compileCode"
+          if ($compileCode -eq 0) {
+              & .\exp2_probe_before_i386.exe
+              Write-Host "pre-45f31de i386 run exit: $LASTEXITCODE"
+          }
+          exit 0
+
+      - name: enforce d9d02c5 snapshot results
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "x64 outcome: ${{ steps.current_x64.outcome }}"
+          Write-Host "i386 outcome: ${{ steps.current_i386.outcome }}"
+          if ("${{ steps.current_x64.outcome }}" -ne "success" -or
+              "${{ steps.current_i386.outcome }}" -ne "success") {
+              throw "one or more d9d02c5 exp2 probes failed"
+          }
