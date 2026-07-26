@@ -53,6 +53,44 @@ jobs:
         shell: pwsh
         run: work/thirdparty/tcc/build.ps1
 
+      - name: validate secure CRT fopen_s/freopen_s with x64 and i386 TCC
+        shell: pwsh
+        run: |
+          $probe = "work/thirdparty/tcc/tests/crt_secure_freopen.c"
+          $cases = @(
+              @{ Id = "x64"; Name = "x64"; Compiler = "work/thirdparty/tcc/tcc.exe" },
+              @{ Id = "i386"; Name = "i386"; Compiler = "work/thirdparty/tcc/i386-win32-tcc.exe" }
+          )
+
+          foreach ($case in $cases) {
+              $token = [guid]::NewGuid().ToString("N")
+              $executable = Join-Path $env:RUNNER_TEMP "crt_secure_freopen_$($case.Id)_$token.exe"
+              $dataPath = Join-Path $env:RUNNER_TEMP "crt_secure_freopen_$($case.Id)_$token.tmp"
+              try {
+                  $compilerArgs = @(
+                      "-Wall",
+                      "-Werror",
+                      "-Werror=implicit-function-declaration",
+                      "-o",
+                      $executable,
+                      $probe
+                  )
+                  & $case.Compiler @compilerArgs
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) secure CRT fopen_s/freopen_s probe failed to compile or link"
+                  }
+
+                  & $executable $dataPath
+                  if ($LASTEXITCODE -ne 0) {
+                      throw "$($case.Name) secure CRT fopen_s/freopen_s probe failed at runtime"
+                  }
+              } finally {
+                  foreach ($path in @($executable, $dataPath)) {
+                      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+                  }
+              }
+          }
+
       - name: validate WinAPI declarations with x64 and i386 TCC
         shell: pwsh
         run: |
@@ -247,6 +285,37 @@ jobs:
                       throw "$($case.Name) shell drag/drop probe with $($linkMode.Name) execution failed"
                   }
               }
+          }
+
+      - name: validate RegDeleteKeyW import with x64 and i386 TCC
+        shell: pwsh
+        run: |
+          $probe = "work/thirdparty/tcc/tests/winapi_reg_delete_key.c"
+          $x64 = "$env:RUNNER_TEMP/winapi_reg_delete_key_x64.exe"
+          $i386 = "$env:RUNNER_TEMP/winapi_reg_delete_key_i386.exe"
+
+          & work/thirdparty/tcc/tcc.exe `
+              -Wall -Werror `
+              -Werror=implicit-function-declaration `
+              -o $x64 $probe -ladvapi32
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 RegDeleteKeyW conformance probe failed"
+          }
+          & $x64
+          if ($LASTEXITCODE -ne 0) {
+              throw "x64 RegDeleteKeyW conformance probe execution failed"
+          }
+
+          & work/thirdparty/tcc/i386-win32-tcc.exe `
+              -Wall -Werror `
+              -Werror=implicit-function-declaration `
+              -o $i386 $probe -ladvapi32
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 RegDeleteKeyW conformance probe failed"
+          }
+          & $i386
+          if ($LASTEXITCODE -ne 0) {
+              throw "i386 RegDeleteKeyW conformance probe execution failed"
           }
 
       - name: run shared conformance tests

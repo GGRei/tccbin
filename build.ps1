@@ -28,6 +28,7 @@ $TccPatch3 = Join-Path $PSScriptRoot "0003-win32-declare-CreateSymbolicLink.patc
 $TccPatch4 = Join-Path $PSScriptRoot "0004-win32-declare-WSAConnectBy-family.patch"
 $TccPatch5 = Join-Path $PSScriptRoot "0005-win32-declare-InetNtop-InetPton-family.patch"
 $TccPatch6 = Join-Path $PSScriptRoot "0006-win32-declare-shell-drag-drop-family.patch"
+$TccPatch7 = Join-Path $PSScriptRoot "0007-win32-declare-secure-narrow-stdio.patch"
 $GcPatch = Join-Path $PSScriptRoot "v-ae88ee5-tinycc-bdwgc.patch"
 $OutDir = $PSScriptRoot
 
@@ -53,6 +54,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch5 failed to apply" }
     git apply $TccPatch6
     if ($LASTEXITCODE -ne 0) { throw "$TccPatch6 failed to apply" }
+    git apply $TccPatch7
+    if ($LASTEXITCODE -ne 0) { throw "$TccPatch7 failed to apply" }
 
     Set-Location win32
     & .\build-tcc.bat -clean
