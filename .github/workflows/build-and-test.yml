@@ -22,7 +22,7 @@ jobs:
       TCCBIN_CLONE_SHA: ${{ github.sha }}
       CONTRACT_REPOSITORY: GGRei/v
       CONTRACT_CLONE_URL: https://github.com/GGRei/v
-      CONTRACT_SHA: 59638566494c4583d186a406dd2e9f6ad030b485
+      CONTRACT_SHA: e164e49ccbfa8e2047082878a46de3f736f300ee
       VC_CLONE_URL: https://github.com/vlang/vc
       VC_SHA: dfc458a13ba8923ebc249e262c331f8169aa728b
       PUBLISH: 'false'
