@@ -163,20 +163,26 @@ if [[ "$target_id" == windows-amd64 ]]; then
 	)
 else
 	link_flags=(-lm -lpthread)
-	v_link_flags=()
 	case "$target_id" in
 		freebsd-amd64 | openbsd-amd64)
 			link_flags+=(-lexecinfo)
-			v_link_flags=(-ldflags -lexecinfo)
 			;;
 	esac
 	"$cc_path" -std=c99 -w -o "$contract_root/v1" "$vc_root/v.c" "${link_flags[@]}"
 	(
 		cd -P -- "$contract_root"
-		./v1 -no-parallel -nocache -cc "$cc_path" -o ./v2 -gc none \
-			"${v_link_flags[@]}" cmd/v
-		./v2 -no-parallel -nocache -cc "$cc_path" -o ./v -gc none \
-			"${v_link_flags[@]}" cmd/v
+		case "$target_id" in
+		freebsd-amd64 | openbsd-amd64)
+			./v1 -no-parallel -nocache -cc "$cc_path" -o ./v2 -gc none \
+				-ldflags -lexecinfo cmd/v
+			./v2 -no-parallel -nocache -cc "$cc_path" -o ./v -gc none \
+				-ldflags -lexecinfo cmd/v
+			;;
+		*)
+			./v1 -no-parallel -nocache -cc "$cc_path" -o ./v2 -gc none cmd/v
+			./v2 -no-parallel -nocache -cc "$cc_path" -o ./v -gc none cmd/v
+			;;
+		esac
 	)
 fi
 

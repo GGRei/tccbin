@@ -287,14 +287,15 @@ jobs:
           if [ "$code" -eq 0 ]; then
             echo "::error::Static libgc.a linking now succeeds against the checked-in pair on macOS amd64 - this XFAIL special-casing should be removed and folded back into a single blocking lane, it's no longer needed."
             exit 1
+          elif [ "$code" -ne 1 ]; then
+            echo "::error::Static libgc.a checked-in XFAIL returned exit $code; expected TCC compile-error exit 1 exactly."
+            exit 1
           fi
 
-          # The pinned run.sh (c82d3f0..., predates vlang/v#27935's
-          # stderr-capture fix) only ever prints "(compile error)" with no
-          # detail - compile both failing tests directly to capture their
-          # real tcc stderr and assert each is specifically the known
-          # unresolved-GC-symbol error, the same reasoning already applied
-          # to the freshly-rebuilt archive's XFAIL lane below.
+          # The contract-pinned run.sh includes compiler stderr inline in
+          # its summary. Compile both failing tests directly as well so
+          # each exit status and error stream is isolated and can be
+          # checked for only the known unresolved-GC-symbol signature.
           set +e
           direct_err_gc_alloc=$(./thirdparty/tcc/tcc.exe thirdparty/tccbin_tests/shared/gc_alloc.c \
               -DGC_BUILTIN_ATOMIC=1 -DMPROTECT_VDB=1 \
@@ -314,23 +315,29 @@ jobs:
 
           is_known_gc_init() {
             # $1 = captured stderr text, $2 = the probe's own exit code.
-            # Same reasoning as the freshly-rebuilt archive's equivalent
-            # check below: reject a signal-terminated exit (128+signal)
-            # and reject exit 0 (a changed tcc.exe could print this same
-            # diagnostic as noise while still reporting overall success).
-            if [ "$2" -eq 0 ] || [ "$2" -gt 128 ]; then
+            # TCC's compile-error exit is exactly 1. Every nonempty stderr
+            # line must be one complete unresolved GC_* diagnostic; require
+            # GC_init specifically so an unrelated missing symbol cannot
+            # masquerade as the known archive-parsing limitation.
+            if [ "$2" -ne 1 ]; then
               return 1
             fi
-            case "$1" in
-              *"unresolved reference to '_GC_init'"*|*"unresolved reference to 'GC_init'"*) ;;
-              *) return 1 ;;
-            esac
-            other=$(printf '%s\n' "$1" | grep -E '^tcc: error:' | grep -v -E "unresolved reference to '_?GC_[A-Za-z0-9_]+'")
-            [ -z "$other" ]
+            stderr_lines=$(printf '%s\n' "$1" | sed '/^$/d')
+            [ -n "$stderr_lines" ] || return 1
+            unexpected=$(printf '%s\n' "$stderr_lines" | grep -Ev "^tcc: error: unresolved reference to '_?GC_[A-Za-z0-9_]+'$" || true)
+            [ -z "$unexpected" ] || return 1
+            printf '%s\n' "$stderr_lines" | grep -E "^tcc: error: unresolved reference to '_?GC_init'$" >/dev/null
           }
 
+          pass_count=$(printf '%s\n' "$output" | grep -Ec '^PASS ' || true)
+          fail_count=$(printf '%s\n' "$output" | grep -Ec '^FAIL ' || true)
+          final_summary=$(printf '%s\n' "$output" | sed '/^$/d' | tail -n 1)
           case "$output" in
-            *"PASS crash"*"FAIL gc_alloc (compile error)"*"FAIL hello (compile error)"*)
+            *"PASS crash"*"FAIL gc_alloc (compile error:"*"FAIL hello (compile error:"*)
+              if [ "$pass_count" -ne 1 ] || [ "$fail_count" -ne 2 ] || [ "$final_summary" != '1 passed, 2 failed' ]; then
+                echo "::error::Static libgc.a summary counts/final line differ from the exact known XFAIL (PASS=1, FAIL=2, final='1 passed, 2 failed')."
+                exit 1
+              fi
               if is_known_gc_init "$direct_err_gc_alloc" "$direct_code_gc_alloc" && is_known_gc_init "$direct_err_hello" "$direct_code_hello"; then
                 echo "known XFAIL: static libgc.a still can't link gc_alloc.c/hello.c against the checked-in pair (unresolved GC_init, the known tcc archive-parsing bug), as expected - not blocking CI"
               else
@@ -699,17 +706,15 @@ jobs:
           if [ "$code" -eq 0 ]; then
             echo "::error::Static libgc.a linking now succeeds on macOS amd64 - this lane's special-casing should be removed and folded back into a single blocking lane, this workaround is no longer needed."
             exit 1
+          elif [ "$code" -ne 1 ]; then
+            echo "::error::Static libgc.a rebuilt XFAIL returned exit $code; expected TCC compile-error exit 1 exactly."
+            exit 1
           fi
 
-          # The pinned run.sh (c82d3f0..., predates vlang/v#27935's
-          # stderr-capture fix) only ever prints "(compile error)" with no
-          # detail, so the summary-line match above can't tell "the known
-          # GC_init archive-parsing bug" apart from a DIFFERENT static-link
-          # regression that happens to fail the same two tests (a
-          # corrupted/wrong-architecture archive, an unrelated compiler
-          # bug).
-          # Compile BOTH failing tests directly to capture their real tcc
-          # stderr and assert each is specifically the known unresolved-
+          # The contract-pinned run.sh includes compiler stderr inline in
+          # its summary, but that aggregate output does not preserve each
+          # compile's exit status independently. Compile BOTH failing tests
+          # directly and assert each is specifically the known unresolved-
           # GC-symbol error - checking only one of the two (e.g.
           # gc_alloc.c) would let an unrelated regression isolated to the
           # OTHER test (hello.c) hide behind this same summary shape and
@@ -743,40 +748,29 @@ jobs:
           # bug produces.
           is_known_gc_init() {
             # $1 = captured stderr text, $2 = the probe's own exit code.
-            # A regression could make tcc print the expected GC_init
-            # diagnostic and then crash/abort rather than exiting
-            # cleanly with its normal compile-error status - the earlier
-            # `|| true` discarded that exit code entirely. A
-            # POSIX shell reports a signal-terminated process as exit
-            # code 128+signal; reject those instead of treating any
-            # nonzero exit as "the expected compile-error status". Also
-            # reject exit 0: a changed tcc.exe could start printing this
-            # same diagnostic as noise while still reporting overall
-            # success - the text alone isn't proof the compile actually
-            # failed.
-            if [ "$2" -eq 0 ] || [ "$2" -gt 128 ]; then
+            # TCC's compile-error exit is exactly 1. Every nonempty stderr
+            # line must be one complete unresolved GC_* diagnostic; require
+            # GC_init specifically so an unrelated missing symbol cannot
+            # masquerade as the known archive-parsing limitation.
+            if [ "$2" -ne 1 ]; then
               return 1
             fi
-            case "$1" in
-              *"unresolved reference to '_GC_init'"*|*"unresolved reference to 'GC_init'"*) ;;
-              *) return 1 ;;
-            esac
-            # Filtering only "unresolved reference to '...'" lines and
-            # checking their NAMES misses a wholly DIFFERENT kind of tcc
-            # error (invalid object, relocation error, etc.) riding
-            # alongside the known one - such a line simply wouldn't match
-            # the "unresolved reference to" pattern at extraction, so
-            # `other` would stay empty and this would wrongly accept the
-            # XFAIL. Match on tcc's actual error-line prefix instead, so
-            # ANY tcc error line that isn't specifically a GC_-prefixed
-            # unresolved reference gets caught, not just a differently-
-            # named one.
-            other=$(printf '%s\n' "$1" | grep -E '^tcc: error:' | grep -v -E "unresolved reference to '_?GC_[A-Za-z0-9_]+'")
-            [ -z "$other" ]
+            stderr_lines=$(printf '%s\n' "$1" | sed '/^$/d')
+            [ -n "$stderr_lines" ] || return 1
+            unexpected=$(printf '%s\n' "$stderr_lines" | grep -Ev "^tcc: error: unresolved reference to '_?GC_[A-Za-z0-9_]+'$" || true)
+            [ -z "$unexpected" ] || return 1
+            printf '%s\n' "$stderr_lines" | grep -E "^tcc: error: unresolved reference to '_?GC_init'$" >/dev/null
           }
 
+          pass_count=$(printf '%s\n' "$output" | grep -Ec '^PASS ' || true)
+          fail_count=$(printf '%s\n' "$output" | grep -Ec '^FAIL ' || true)
+          final_summary=$(printf '%s\n' "$output" | sed '/^$/d' | tail -n 1)
           case "$output" in
-            *"PASS crash"*"FAIL gc_alloc (compile error)"*"FAIL hello (compile error)"*)
+            *"PASS crash"*"FAIL gc_alloc (compile error:"*"FAIL hello (compile error:"*)
+              if [ "$pass_count" -ne 1 ] || [ "$fail_count" -ne 2 ] || [ "$final_summary" != '1 passed, 2 failed' ]; then
+                echo "::error::Static libgc.a summary counts/final line differ from the exact known XFAIL (PASS=1, FAIL=2, final='1 passed, 2 failed')."
+                exit 1
+              fi
               if is_known_gc_init "$direct_err_gc_alloc" "$direct_code_gc_alloc" && is_known_gc_init "$direct_err_hello" "$direct_code_hello"; then
                 echo "known XFAIL: static libgc.a still can't link gc_alloc.c/hello.c (unresolved GC_init, the known tcc archive-parsing bug), as expected - not blocking CI"
               else
