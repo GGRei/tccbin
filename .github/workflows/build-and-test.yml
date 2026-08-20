@@ -2,28 +2,62 @@ name: build and test (linux-amd64)
 
 on:
   push:
-    branches: [thirdparty-linux-amd64]
-  pull_request:
-    branches: [thirdparty-linux-amd64]
-  workflow_dispatch: {}
+    branches: ['fork/tccbin-automation-linux-amd64-20260820']
+
+permissions:
+  contents: read
+
+env:
+  CONTRACT_REPOSITORY: GGRei/v
+  CONTRACT_SHA: 969e6149d2f07eb8dff9191f08dc75b0276d31d4
+  VC_SHA: dfc458a13ba8923ebc249e262c331f8169aa728b
+  PUBLISH: '0'
+  TCCBIN_PUBLISH: '0'
 
 jobs:
   build:
+    if: >-
+      github.repository == 'GGRei/tccbin' &&
+      github.ref == 'refs/heads/fork/tccbin-automation-linux-amd64-20260820'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       # thirdparty/libgc/include (headers) and thirdparty/tccbin_tests (the
       # shared cross-platform conformance suite - see its README) both live
       # in the main v repo, not here.
       - name: checkout v (for thirdparty/libgc and thirdparty/tccbin_tests)
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: vlang/v
-          ref: c82d3f08271e9324d6fb8de3c251e9c0e1a9154b
-          sparse-checkout: |
-            thirdparty/libgc
-            thirdparty/tccbin_tests
-          sparse-checkout-cone-mode: false
+          repository: GGRei/v
+          ref: ${{ env.CONTRACT_SHA }}
           path: work
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: checkout immutable VC bootstrap snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_SHA }}
+          path: .tccbin-bootstrap-vc
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: bootstrap contract-bound validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          validator_work="$RUNNER_TEMP/tccbin-validator-work"
+          test ! -e "$validator_work"
+          git -C work config --local core.autocrlf false
+          git -C .tccbin-bootstrap-vc config --local core.autocrlf false
+          work/thirdparty/tccbin_automation/bootstrap/bootstrap.sh \
+            "$GITHUB_WORKSPACE/work" "$CONTRACT_REPOSITORY" "$CONTRACT_SHA" \
+            "$GITHUB_WORKSPACE/.tccbin-bootstrap-vc" "$validator_work"
+          {
+            echo "TCCBIN_VALIDATOR_CLI=$validator_work/tccbin-automation"
+            echo "TCCBIN_VALIDATOR_CONTRACT_ROOT=$validator_work/contract-source"
+          } >> "$GITHUB_ENV"
 
       # this branch's already-committed tcc.exe/lib/include, checked out at
       # work/thirdparty/tcc - this exact relative layout matters: the
@@ -36,9 +70,23 @@ jobs:
       # errors that have nothing to do with the actual test being run -
       # reproduced and root-caused locally before writing this workflow.
       - name: checkout this branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.sha }}
           path: work/thirdparty/tcc
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: validate fork manifest and immutable contract binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C work/thirdparty/tcc config --local core.autocrlf false
+          bash work/thirdparty/tcc/automation/probes/fork-contract.sh \
+            "$TCCBIN_VALIDATOR_CLI" "$TCCBIN_VALIDATOR_CONTRACT_ROOT" \
+            "$GITHUB_WORKSPACE/work/thirdparty/tcc" linux-amd64 \
+            thirdparty-linux-amd64 "$CONTRACT_SHA" "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE/.tccbin-bootstrap-vc"
 
       - name: run shared conformance tests
         working-directory: work
@@ -57,3 +105,19 @@ jobs:
               -I ./thirdparty/libgc/include \
               ./thirdparty/tcc/lib/libgc.a \
               -ldl -lpthread
+
+  tccbin-branch-gate:
+    name: tccbin-branch-gate
+    if: >-
+      always() &&
+      github.repository == 'GGRei/tccbin' &&
+      github.ref == 'refs/heads/fork/tccbin-automation-linux-amd64-20260820'
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: require successful read-only target validation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: test "$BUILD_RESULT" = success
