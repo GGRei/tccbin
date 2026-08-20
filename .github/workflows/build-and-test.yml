@@ -2,10 +2,17 @@ name: build and test (macos-arm64)
 
 on:
   push:
-    branches: [thirdparty-macos-arm64]
-  pull_request:
-    branches: [thirdparty-macos-arm64]
-  workflow_dispatch: {}
+    branches: ['fork/tccbin-automation-macos-arm64-20260820']
+
+permissions:
+  contents: read
+
+env:
+  CONTRACT_REPOSITORY: GGRei/v
+  CONTRACT_SHA: 969e6149d2f07eb8dff9191f08dc75b0276d31d4
+  VC_SHA: dfc458a13ba8923ebc249e262c331f8169aa728b
+  PUBLISH: '0'
+  TCCBIN_PUBLISH: '0'
 
 concurrency:
   group: build-and-test-macos-arm64-${{ github.ref }}
@@ -13,6 +20,9 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      github.repository == 'GGRei/tccbin' &&
+      github.ref == 'refs/heads/fork/tccbin-automation-macos-arm64-20260820'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -26,23 +36,59 @@ jobs:
       # this branch reuses its own prebuilt libgc.a/libgc.dylib rather
       # than compiling thirdparty/libgc/gc.c from source.
       - name: checkout v (for thirdparty/libgc and thirdparty/tccbin_tests)
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: vlang/v
-          ref: c82d3f08271e9324d6fb8de3c251e9c0e1a9154b
-          sparse-checkout: |
-            thirdparty/libgc/include
-            thirdparty/tccbin_tests
-            vlib/v/compiler_errors_test.v
-          sparse-checkout-cone-mode: false
+          repository: GGRei/v
+          ref: ${{ env.CONTRACT_SHA }}
           path: work
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: checkout immutable VC bootstrap snapshot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_SHA }}
+          path: .tccbin-bootstrap-vc
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: bootstrap contract-bound validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          validator_work="$RUNNER_TEMP/tccbin-validator-work"
+          test ! -e "$validator_work"
+          git -C work config --local core.autocrlf false
+          git -C .tccbin-bootstrap-vc config --local core.autocrlf false
+          work/thirdparty/tccbin_automation/bootstrap/bootstrap.sh \
+            "$GITHUB_WORKSPACE/work" "$CONTRACT_REPOSITORY" "$CONTRACT_SHA" \
+            "$GITHUB_WORKSPACE/.tccbin-bootstrap-vc" "$validator_work"
+          {
+            echo "TCCBIN_VALIDATOR_CLI=$validator_work/tccbin-automation"
+            echo "TCCBIN_VALIDATOR_CONTRACT_ROOT=$validator_work/contract-source"
+          } >> "$GITHUB_ENV"
 
       # this branch, checked out where build.sh expects to find itself
       # (work/thirdparty/tcc), matching a normal local checkout layout.
       - name: checkout this branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.sha }}
           path: work/thirdparty/tcc
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: validate fork manifest and immutable contract binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C work/thirdparty/tcc config --local core.autocrlf false
+          bash work/thirdparty/tcc/automation/probes/fork-contract.sh \
+            "$TCCBIN_VALIDATOR_CLI" "$TCCBIN_VALIDATOR_CONTRACT_ROOT" \
+            "$GITHUB_WORKSPACE/work/thirdparty/tcc" macos-arm64 \
+            thirdparty-macos-arm64 "$CONTRACT_SHA" "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE/.tccbin-bootstrap-vc"
 
       # This branch DISTRIBUTES the checked-in tcc.exe/libgc.a/libgc.dylib
       # directly - that's what V's own builder and anyone else using this
@@ -207,28 +253,18 @@ jobs:
               ;;
           esac
 
-      # actions/upload-artifact doesn't preserve executable bits on raw
-      # files (tcc.exe would come back chmod 644 after download), and
-      # hand-listing individual paths already missed lib/libtcc1.a -
-      # which tcc.exe needs at link time just as much as libgc. Archive
-      # the whole rebuilt thirdparty/tcc output instead: tar preserves
-      # modes, and keeping the thirdparty/tcc/ prefix inside the
-      # archive means extracting it anywhere reproduces the exact
-      # relative layout tcc.exe's own baked-in library path expects
-      # (see the comment on the "run shared conformance tests" step
-      # above) - a raw multi-path upload-artifact list would instead
-      # flatten that prefix away.
-      - name: package built tcc for upload
-        # Run even after an earlier failure, so a maintainer debugging
-        # a red run still gets a downloadable build to reproduce
-        # against instead of just a log transcript.
-        if: ${{ !cancelled() }}
-        working-directory: work
-        run: tar --exclude=.git -czf tccbin-macos-arm64-current.tar.gz thirdparty/tcc
-
-      - name: upload built binaries
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: tccbin-macos-arm64-current
-          path: work/tccbin-macos-arm64-current.tar.gz
+  tccbin-branch-gate:
+    name: tccbin-branch-gate
+    if: >-
+      always() &&
+      github.repository == 'GGRei/tccbin' &&
+      github.ref == 'refs/heads/fork/tccbin-automation-macos-arm64-20260820'
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: require successful read-only target validation
+        shell: bash
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: test "$BUILD_RESULT" = success
