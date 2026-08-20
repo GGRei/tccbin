@@ -21,6 +21,11 @@ jobs:
       github.ref == 'refs/heads/fork/tccbin-automation-windows-amd64-20260820'
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      # MSYS2's extensionless /ucrt64/bin/cc shim is translated by V to a
+      # native path without .exe. Select the physical allowlisted compiler
+      # name so both contract bootstrap and the fork probe resolve gcc.exe.
+      CC: gcc.exe
     steps:
       # windows-latest runners default to core.autocrlf=true, which
       # silently rewrites LF to CRLF on checkout/clone. The patches
