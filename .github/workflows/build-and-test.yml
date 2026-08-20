@@ -359,14 +359,6 @@ jobs:
         # by the tcc build itself.
         run: brew install make automake libtool
 
-      - name: configure git identity
-        # the build script commits the rebuilt binaries inside
-        # $TCC_FOLDER as its last step; it needs an identity to do
-        # that even though we never push this commit anywhere.
-        run: |
-          git config --global user.name tccbin-ci
-          git config --global user.email tccbin-ci@users.noreply.github.com
-
       # This branch's tcc.exe is stale (version 0.9.27, no
       # build_source_hash.txt/build_version.txt provenance tracking at
       # all - unlike every other actively-maintained platform branch),
@@ -378,12 +370,11 @@ jobs:
       # such file or directory" on this macos-15-intel runner). No CI
       # flag can fix a broken symlink baked into the committed binary -
       # rebuilding from current tinycc (mob) with the official script
-      # is the actual fix, reusing this branch's already-committed
-      # libgc.a (the script's own rsync step preserves it, no GC
-      # rebuild needed).
+      # is the actual fix. The managed-bundle mode produces a detached
+      # stage; the following step then rebuilds libgc for that stage.
       # MACOSX_DEPLOYMENT_TARGET pinned to 10.13 (High Sierra, 2017) -
       # without it, clang stamps rebuilt binaries with this CI runner's
-      # own macOS 15 minimum, so the uploaded generic macOS-amd64
+      # own macOS 15 minimum, so the generic macOS-amd64
       # distribution silently couldn't run on older Intel macOS releases
       # the existing prebuilt distribution supports. 10.13 is a
       # conservative, widely-used baseline for Intel-only distributions;
@@ -395,22 +386,24 @@ jobs:
         env:
           TCC_COMMIT: mob
           TCC_FOLDER: thirdparty/tcc
+          TCCBIN_DEFER_COMMIT: '1'
+          TCCBIN_STAGE_ROOT: ${{ runner.temp }}/tccbin-macos-amd64-stage
           CC: clang
           MACOSX_DEPLOYMENT_TARGET: "10.13"
         run: |
           set -eu
-          # The official script's own carry-forward step
-          # (`rsync -a thirdparty/tcc.original/lib/build*  $TCC_FOLDER/lib/`)
-          # expects prior lib/build_*.txt provenance files to exist -
-          # true for every other platform, since they've already been
-          # through this pipeline at least once. This branch never has
-          # (confirmed: no build_source_hash.txt/build_version.txt at
-          # all before this), so the glob matches nothing and rsync
-          # errors "No such file or directory" on its first-ever run
-          # through the modern pipeline. Seed one placeholder so the
-          # glob has something to match; the script overwrites the real
-          # build_*.txt files with accurate content right after anyway.
-          touch thirdparty/tcc/lib/build_bootstrap_marker.txt
+          candidate_root="$PWD/thirdparty/tcc"
+          committed_root="$PWD/thirdparty/tcc.committed"
+          test ! -L "$candidate_root"
+          test -d "$candidate_root"
+          test "$(cd "$candidate_root" && pwd -P)" = "$candidate_root"
+          test ! -e "$committed_root"
+          test ! -L "$committed_root"
+          test ! -e "$TCCBIN_STAGE_ROOT"
+          test ! -L "$TCCBIN_STAGE_ROOT"
+          test "$(git -C "$candidate_root" rev-parse HEAD)" = "$GITHUB_SHA"
+          candidate_status=$(git -C "$candidate_root" status --porcelain=v1 --untracked-files=all --ignored=matching)
+          test -z "$candidate_status"
 
           # repo.or.cz's HTTPS endpoint has been observed to fail
           # intermittently in CI (confirmed independently, including from
@@ -419,9 +412,8 @@ jobs:
           # HTTPS failed - but that fallback is itself the vulnerability:
           # an active on-path attacker can simply block HTTPS to FORCE
           # the fallback, then feed tampered tinycc source into a
-          # compile-and-run pipeline whose output gets uploaded as a
-          # build artifact. A warning in the log doesn't mitigate that -
-          # the tampered source still gets built and run either way.
+          # compiler-and-test pipeline. A warning in the log doesn't
+          # mitigate that - the tampered source still gets built and run.
           # No downgrade path exists anymore - if
           # HTTPS is genuinely unreachable, the job fails for real.
           #
@@ -437,11 +429,10 @@ jobs:
           # when its failure specifically matches a network-connection
           # signature, so a genuine build bug (a real gmake failure, a
           # configure error) fails fast instead of wasting 3 attempts on
-          # something retrying will never fix. The script itself does
-          # `rm -rf tinycc/` unconditionally as its first action, and
-          # the network operation (git clone) happens before any step
-          # that mutates $TCC_FOLDER, so retrying the whole script after
-          # a network failure is safe - no partial state to clean up.
+          # something retrying will never fix. In deferred mode the
+          # script builds only in isolated temporary roots, and its trap
+          # removes incomplete work/output before it returns failure;
+          # the authenticated checkout is never mutated by a retry.
           attempt=0
           while true; do
             attempt=$((attempt + 1))
@@ -468,6 +459,30 @@ jobs:
                 ;;
             esac
           done
+
+          # Keep the authenticated checkout intact for restoration and
+          # promote only the detached output produced by deferred mode.
+          # Every following build/test step addresses thirdparty/tcc and
+          # therefore sees the promoted stage, never a mixed overlay.
+          test ! -L "$TCCBIN_STAGE_ROOT"
+          test -d "$TCCBIN_STAGE_ROOT"
+          test "$(cd "$TCCBIN_STAGE_ROOT" && pwd -P)" = "$TCCBIN_STAGE_ROOT"
+          test -f "$TCCBIN_STAGE_ROOT/tcc.exe"
+          test ! -L "$TCCBIN_STAGE_ROOT/tcc.exe"
+          test -x "$TCCBIN_STAGE_ROOT/tcc.exe"
+          test ! -e "$TCCBIN_STAGE_ROOT/.git"
+          test ! -L "$TCCBIN_STAGE_ROOT/.git"
+          test ! -e "$TCCBIN_STAGE_ROOT/automation"
+          test ! -L "$TCCBIN_STAGE_ROOT/automation"
+          mv "$candidate_root" "$committed_root"
+          mv "$TCCBIN_STAGE_ROOT" "$candidate_root"
+          test ! -L "$candidate_root"
+          test -d "$candidate_root"
+          test "$(cd "$candidate_root" && pwd -P)" = "$candidate_root"
+          test "$(git -C "$committed_root" rev-parse HEAD)" = "$GITHUB_SHA"
+          committed_status=$(git -C "$committed_root" status --porcelain=v1 --untracked-files=all --ignored=matching)
+          test -z "$committed_status"
+
           thirdparty/tcc/tcc.exe --version
           thirdparty/tcc/tcc.exe -v -v
 
@@ -547,8 +562,8 @@ jobs:
           # archive's build (a universal x86_64/arm64 configure
           # invocation) - if left untouched it would keep claiming that
           # for the archive THIS step just produced with a materially
-          # different, amd64-only configure line, making every uploaded
-          # artifact's provenance false. Overwrite it with the actual
+          # different, amd64-only configure line, making the rebuilt
+          # bundle's provenance false. Overwrite it with the actual
           # command used above - including MACOSX_DEPLOYMENT_TARGET,
           # which materially affects dylib/archive compatibility and
           # would otherwise be missing from anyone trying to reproduce
@@ -785,6 +800,55 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: restore committed tcc checkout for post-job cleanup
+        if: ${{ always() }}
+        working-directory: work
+        env:
+          TCCBIN_STAGE_ROOT: ${{ runner.temp }}/tccbin-macos-amd64-stage
+        run: |
+          set -eu
+          candidate_root="$PWD/thirdparty/tcc"
+          committed_root="$PWD/thirdparty/tcc.committed"
+          rebuilt_discard="$RUNNER_TEMP/tccbin-macos-amd64-rebuilt"
+          unpromoted_discard="$RUNNER_TEMP/tccbin-macos-amd64-unpromoted"
+          if test -e "$TCCBIN_STAGE_ROOT" || test -L "$TCCBIN_STAGE_ROOT"; then
+            test ! -L "$TCCBIN_STAGE_ROOT"
+            test -d "$TCCBIN_STAGE_ROOT"
+            test "$(cd "$TCCBIN_STAGE_ROOT" && pwd -P)" = "$TCCBIN_STAGE_ROOT"
+            test ! -e "$unpromoted_discard"
+            test ! -L "$unpromoted_discard"
+            mv "$TCCBIN_STAGE_ROOT" "$unpromoted_discard"
+          fi
+          if test -e "$committed_root" || test -L "$committed_root"; then
+            test ! -L "$committed_root"
+            test -d "$committed_root"
+            test "$(cd "$committed_root" && pwd -P)" = "$committed_root"
+            test "$(git -C "$committed_root" rev-parse HEAD)" = "$GITHUB_SHA"
+            committed_status=$(git -C "$committed_root" status --porcelain=v1 --untracked-files=all --ignored=matching)
+            test -z "$committed_status"
+            if test -e "$candidate_root" || test -L "$candidate_root"; then
+              test ! -L "$candidate_root"
+              test -d "$candidate_root"
+              test "$(cd "$candidate_root" && pwd -P)" = "$candidate_root"
+              test ! -e "$candidate_root/.git"
+              test ! -L "$candidate_root/.git"
+              test ! -e "$rebuilt_discard"
+              test ! -L "$rebuilt_discard"
+              mv "$candidate_root" "$rebuilt_discard"
+            fi
+            mv "$committed_root" "$candidate_root"
+          fi
+          test ! -L "$candidate_root"
+          test -d "$candidate_root"
+          test "$(cd "$candidate_root" && pwd -P)" = "$candidate_root"
+          test "$(git -C "$candidate_root" rev-parse HEAD)" = "$GITHUB_SHA"
+          candidate_status=$(git -C "$candidate_root" status --porcelain=v1 --untracked-files=all --ignored=matching)
+          test -z "$candidate_status"
+          test ! -e "$committed_root"
+          test ! -L "$committed_root"
+          test ! -e "$TCCBIN_STAGE_ROOT"
+          test ! -L "$TCCBIN_STAGE_ROOT"
 
   tccbin-branch-gate:
     name: tccbin-branch-gate
