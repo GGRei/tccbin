@@ -241,11 +241,64 @@ jobs:
           if [ "$code" -eq 0 ]; then
             echo "::error::Static libgc.a linking now succeeds on macOS arm64 - this lane's special-casing should be removed and folded back into a single blocking lane, this workaround is no longer needed."
             exit 1
+          elif [ "$code" -ne 1 ]; then
+            echo "::error::Static libgc.a XFAIL returned exit $code; expected TCC compile-error exit 1 exactly."
+            exit 1
           fi
 
+          set +e
+          direct_err_gc_alloc=$(thirdparty/tcc/tcc.exe thirdparty/tccbin_tests/shared/gc_alloc.c \
+              -DGC_BUILTIN_ATOMIC=1 \
+              -DGC_THREADS=1 \
+              -DMPROTECT_VDB=1 \
+              -I thirdparty/libgc/include \
+              "$PWD/thirdparty/tcc/lib/libgc.a" \
+              -ldl -lpthread \
+              -o /tmp/gc_alloc_arm64_xfail_probe 2>&1)
+          direct_code_gc_alloc=$?
+          direct_err_hello=$(thirdparty/tcc/tcc.exe thirdparty/tccbin_tests/shared/hello.c \
+              -DGC_BUILTIN_ATOMIC=1 \
+              -DGC_THREADS=1 \
+              -DMPROTECT_VDB=1 \
+              -I thirdparty/libgc/include \
+              "$PWD/thirdparty/tcc/lib/libgc.a" \
+              -ldl -lpthread \
+              -o /tmp/hello_arm64_xfail_probe 2>&1)
+          direct_code_hello=$?
+          set -e
+
+          is_known_gc_init() {
+            # TCC's compile-error exit is exactly 1. Every nonempty stderr
+            # line must be one complete unresolved GC_* diagnostic; require
+            # GC_init specifically so an unrelated missing symbol cannot
+            # masquerade as the known archive-parsing limitation.
+            if [ "$2" -ne 1 ]; then
+              return 1
+            fi
+            stderr_lines=$(printf '%s\n' "$1" | sed '/^$/d')
+            [ -n "$stderr_lines" ] || return 1
+            unexpected=$(printf '%s\n' "$stderr_lines" | grep -Ev "^tcc: error: unresolved reference to '_?GC_[A-Za-z0-9_]+'$" || true)
+            [ -z "$unexpected" ] || return 1
+            printf '%s\n' "$stderr_lines" | grep -E "^tcc: error: unresolved reference to '_?GC_init'$" >/dev/null
+          }
+
+          pass_count=$(printf '%s\n' "$output" | grep -Ec '^PASS ' || true)
+          fail_count=$(printf '%s\n' "$output" | grep -Ec '^FAIL ' || true)
+          final_summary=$(printf '%s\n' "$output" | sed '/^$/d' | tail -n 1)
           case "$output" in
-            *"PASS crash"*"FAIL gc_alloc (compile error)"*"FAIL hello (compile error)"*)
-              echo "known XFAIL: static libgc.a still can't link gc_alloc/hello, as expected - not blocking CI"
+            *"PASS crash"*"FAIL gc_alloc (compile error:"*"FAIL hello (compile error:"*)
+              if [ "$pass_count" -ne 1 ] || [ "$fail_count" -ne 2 ] || [ "$final_summary" != '1 passed, 2 failed' ]; then
+                echo "::error::Static libgc.a summary counts/final line differ from the exact known XFAIL (PASS=1, FAIL=2, final='1 passed, 2 failed')."
+                exit 1
+              fi
+              if is_known_gc_init "$direct_err_gc_alloc" "$direct_code_gc_alloc" && is_known_gc_init "$direct_err_hello" "$direct_code_hello"; then
+                echo "known XFAIL: static libgc.a still can't link gc_alloc/hello (unresolved GC_init, the known tcc archive-parsing bug), as expected - not blocking CI"
+              else
+                echo "::error::libgc.a lane failed with the known summary shape, but at least one of gc_alloc.c/hello.c's direct compile errors does NOT mention an unresolved GC_init reference (or exited abnormally) - this looks like a different, unexpected regression:"
+                echo "gc_alloc.c: exit=$direct_code_gc_alloc: $direct_err_gc_alloc"
+                echo "hello.c: exit=$direct_code_hello: $direct_err_hello"
+                exit 1
+              fi
               ;;
             *)
               echo "::error::Static libgc.a lane failed, but NOT with the known/expected signature (PASS crash, FAIL gc_alloc/hello with compile error) - this looks like a different, unexpected problem and should not be silently treated as the known XFAIL."
