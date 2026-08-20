@@ -2,9 +2,9 @@
   "schema_version": 1,
   "contract_version": 1,
   "contract_repository": "GGRei/v",
-  "contract_sha": "59638566494c4583d186a406dd2e9f6ad030b485",
+  "contract_sha": "e164e49ccbfa8e2047082878a46de3f736f300ee",
   "contract_mode": "fork-dry-run",
-  "v_source_sha": "59638566494c4583d186a406dd2e9f6ad030b485",
+  "v_source_sha": "e164e49ccbfa8e2047082878a46de3f736f300ee",
   "target_id": "windows-amd64",
   "branch": "thirdparty-windows-amd64",
   "sources": [
