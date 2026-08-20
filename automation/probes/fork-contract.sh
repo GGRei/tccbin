@@ -72,7 +72,25 @@ done
 [[ "$(git -C "$bundle_root" symbolic-ref -q HEAD || true)" == '' ]]
 [[ "$(git -C "$bundle_root" status --porcelain=v1 --untracked-files=all --ignored=matching)" == '' ]]
 
-staging_parent=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
+temp_parent_input=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
+case "$target_id" in
+	windows-amd64)
+		[[ "$(type -t -- cygpath || true)" == file ]] || {
+			printf '%s\n' 'Windows fork probe requires external cygpath' >&2
+			exit 1
+		}
+		cygpath_path=$(command -v -- cygpath)
+		[[ "$cygpath_path" == /* && -x "$cygpath_path" && ! -d "$cygpath_path" ]] || exit 1
+		staging_parent=$("$cygpath_path" -u "$temp_parent_input")
+		;;
+	*)
+		staging_parent=$temp_parent_input
+		;;
+esac
+[[ "$staging_parent" == /* && "$staging_parent" != *$'\n'* \
+	&& "$staging_parent" != *$'\r'* && "$staging_parent" != *$'\t'* \
+	&& -d "$staging_parent" && ! -L "$staging_parent" ]] || exit 1
+staging_parent=$(cd -P -- "$staging_parent" && pwd -P)
 staging_root=$(mktemp -d "$staging_parent/tccbin-payload.XXXXXX")
 cleanup_paths=("$staging_root")
 linked_bundle=false
