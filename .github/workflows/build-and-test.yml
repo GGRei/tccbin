@@ -2,9 +2,7 @@ name: build and test (freebsd-amd64)
 
 on:
   push:
-    branches: [thirdparty-freebsd-amd64]
-  pull_request:
-    branches: [thirdparty-freebsd-amd64]
+    branches: ['harness/tccbin-control-plane-freebsd-amd64-20260821']
 
 permissions:
   contents: read
@@ -13,19 +11,15 @@ jobs:
   build:
     name: freebsd-amd64 read-only validation
     if: >-
-      github.repository == 'vlang/tccbin' &&
-      (
-        (github.event_name == 'pull_request' &&
-          github.base_ref == 'thirdparty-freebsd-amd64') ||
-        (github.event_name == 'push' &&
-          github.ref == 'refs/heads/thirdparty-freebsd-amd64')
-      )
+      github.repository == 'GGRei/tccbin' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/harness/tccbin-control-plane-freebsd-amd64-20260821'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       TARGET_ID: freebsd-amd64
       CANONICAL_BRANCH: thirdparty-freebsd-amd64
-      TCCBIN_CLONE_URL: https://github.com/vlang/tccbin
+      TCCBIN_CLONE_URL: https://github.com/GGRei/tccbin
       TCCBIN_CLONE_SHA: ${{ github.sha }}
       CONTRACT_REPOSITORY: vlang/v
       CONTRACT_CLONE_URL: https://github.com/vlang/v
@@ -287,13 +281,9 @@ jobs:
     name: tccbin-branch-gate
     if: >-
       always() &&
-      github.repository == 'vlang/tccbin' &&
-      (
-        (github.event_name == 'pull_request' &&
-          github.base_ref == 'thirdparty-freebsd-amd64') ||
-        (github.event_name == 'push' &&
-          github.ref == 'refs/heads/thirdparty-freebsd-amd64')
-      )
+      github.repository == 'GGRei/tccbin' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/harness/tccbin-control-plane-freebsd-amd64-20260821'
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
