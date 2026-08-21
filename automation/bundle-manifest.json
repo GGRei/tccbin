@@ -2,9 +2,9 @@
   "schema_version": 1,
   "contract_version": 1,
   "contract_repository": "GGRei/v",
-  "contract_sha": "e164e49ccbfa8e2047082878a46de3f736f300ee",
+  "contract_sha": "7545e515b434cd399333d43659238427d72e22e7",
   "contract_mode": "fork-dry-run",
-  "v_source_sha": "e164e49ccbfa8e2047082878a46de3f736f300ee",
+  "v_source_sha": "7545e515b434cd399333d43659238427d72e22e7",
   "target_id": "macos-amd64",
   "branch": "thirdparty-macos-amd64",
   "sources": [
