@@ -2,9 +2,7 @@ name: build and test (windows-amd64)
 
 on:
   push:
-    branches: [thirdparty-windows-amd64]
-  pull_request:
-    branches: [thirdparty-windows-amd64]
+    branches: ['harness/tccbin-control-plane-windows-amd64-20260821']
 
 permissions:
   contents: read
@@ -19,13 +17,9 @@ env:
 jobs:
   build:
     if: >-
-      github.repository == 'vlang/tccbin' &&
-      (
-        (github.event_name == 'pull_request' &&
-          github.base_ref == 'thirdparty-windows-amd64') ||
-        (github.event_name == 'push' &&
-          github.ref == 'refs/heads/thirdparty-windows-amd64')
-      )
+      github.repository == 'GGRei/tccbin' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/harness/tccbin-control-plane-windows-amd64-20260821'
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -541,13 +535,9 @@ jobs:
     name: tccbin-branch-gate
     if: >-
       always() &&
-      github.repository == 'vlang/tccbin' &&
-      (
-        (github.event_name == 'pull_request' &&
-          github.base_ref == 'thirdparty-windows-amd64') ||
-        (github.event_name == 'push' &&
-          github.ref == 'refs/heads/thirdparty-windows-amd64')
-      )
+      github.repository == 'GGRei/tccbin' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/harness/tccbin-control-plane-windows-amd64-20260821'
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
